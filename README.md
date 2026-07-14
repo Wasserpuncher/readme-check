@@ -238,13 +238,27 @@ not want the number to be true.
 
 <!-- readme-check: skip=would-install -->
 ```console
-$ pip install readme-check
+$ pip install git+https://github.com/Wasserpuncher/readme-check
 $ readme-check                    # checks ./README.md
 $ readme-check docs/GUIDE.md --tolerance 5
 $ readme-check --update           # writes the numbers that moved back in
 ```
 
 Python 3.10+, no dependencies.
+
+> **Not `pip install readme-check`.** That name belongs to an unrelated package
+> on PyPI, by someone else, and it will install cleanly and then not work. This
+> README told you to run it until today — three CI pipelines followed the
+> instruction and silently pulled a stranger's code before one of them happened
+> to fail loudly enough to notice.
+>
+> The block above is marked `skip`, because installing something is not a
+> promise a README check should keep. So the one command on this page that this
+> tool never ran was the one command that was wrong. That is not an irony I get
+> to enjoy; it is the sharpest limit of the whole idea, and it belongs here in
+> writing: **a checker only ever covers what you let it run.** What you exempt,
+> you are trusting — and you are trusting yourself, which is the party this tool
+> exists because you cannot trust.
 
 **It runs the commands in your README.** That is the entire idea, and it means it
 will do whatever your README tells people to do — including writing files, and
