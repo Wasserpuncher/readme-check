@@ -3,17 +3,23 @@
 **Your README makes promises. This runs them.**
 
 I audited the READMEs of eight of my own repositories, by hand, in one night.
-**Four of them lied.**
+**Six of them had a number that was wrong. Four were wrong the day they were
+written.**
 
-Not maliciously. One said `7 passed` when there were six. One pasted a console
-transcript straight out of a test fixture — it advertised `1.2.3.4` as a real
-nameserver, which is a placeholder constant, which means nobody had ever run the
-tool they were documenting. One quoted a benchmark 2.5× more flattering than the
-machine actually produces. One reported a binary size that was true when it was
-written and stale within the hour, because the code got better and the README
-didn't notice.
+The distinction matters, and it is the reason this tool exists.
 
-Every one of those was a number a reader could have checked in thirty seconds. So
+Four were **false from the start**. One said `7 passed` when there were six. One
+pasted a console transcript straight out of a test fixture — it advertised
+`1.2.3.4` as a real nameserver, which is a placeholder constant, which means
+nobody had ever run the tool they were documenting. One quoted a benchmark 2.5×
+more flattering than the machine actually produces, in my own favour, which is
+the direction these errors always go.
+
+Two **drifted**. They were true when they were written and stale within the
+hour, because the code got better and the README didn't notice. That is the more
+frightening kind: it needs no carelessness at all, only time.
+
+Every one of them was a number a reader could have checked in thirty seconds. So
 now a machine checks them.
 
 <!-- readme-check: skip=illustration -->
@@ -210,13 +216,19 @@ would be a particularly embarrassing way to find out.
 Every one of these is now fixed, and every fix is a commit that says what was
 wrong:
 
-| repository | what the README claimed | what was true |
-| --- | --- | --- |
-| `pdb-from-scratch` | `7 passed` | 6 |
-| `recursive-dns` | `1.2.3.4` as the authoritative nameserver | a fixture constant; the transcript was never run |
-| `rejit` | Python's `re` takes 34,060 ms | 13,807 ms — a 2.5× overstatement |
-| `minilink` | `hello: 8204 bytes` | 9,049 — true when written, stale within the hour |
-| `tcp-userspace` | 300 connections at 35% loss | the test ran twelve, at 30% |
+| repository | what the README claimed | what was true | |
+| --- | --- | --- | --- |
+| `pdb-from-scratch` | `7 passed` | 6 | false from the start |
+| `recursive-dns` | `1.2.3.4` as the authoritative nameserver | a fixture constant; the transcript was never run | false from the start |
+| `rejit` | Python's `re` takes 34,060 ms | 13,807 ms — a 2.5× overstatement | false from the start |
+| `tcp-userspace` | 300 connections at 35% loss | the test ran twelve, at 30% | false from the start |
+| `minilink` | `hello: 8204 bytes` | 9,049 | **drifted** |
+| `cdcl-sat` | `920 lines you can read` | 981 | **drifted** |
+
+The last row is the one that changed the tool. `920 lines` sits in a *sentence* —
+no console block, no `$`, nothing a fenced-block checker could ever see. Nobody
+lied; somebody wrote more code. That is why a prose number can now name the
+command that settles it.
 
 The tool did not find these — I did, painfully, by hand. It exists so that the
 next one is found in four seconds by a machine that does not get tired and does
