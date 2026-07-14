@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "readme-check"
+version = "1.0.0"
+description = "Run the console blocks in your README and check they still tell the truth"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Wasserpuncher" }]
+keywords = ["readme", "documentation", "testing", "doctest", "ci", "honesty"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = []
+
+[project.scripts]
+readme-check = "readmecheck.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/Wasserpuncher/readme-check"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["readmecheck*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
