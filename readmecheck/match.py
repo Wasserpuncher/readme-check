@@ -145,6 +145,218 @@ def strip_ansi(text: str) -> str:
     return ANSI.sub("", text)
 
 
+# --------------------------------------------------------------------------
+# Numbers in prose
+#
+# A console block is not the only place a README makes a checkable claim. The
+# most expensive lie found in the audit was a sentence: cdcl-sat's README said
+# "920 lines you can read", and there were 981. No console block, no `$`, no
+# way for a tool that only reads fenced blocks to notice. The reader can check
+# it in thirty seconds; the tool could not check it at all.
+#
+# So a prose number can be bound to the command that measures it, and the two
+# are compared. The comparison is *numeric*, not textual: the command prints a
+# number somewhere, we take the first one, and that is the measurement. A
+# substring test would let a claim of `920` be satisfied by an output of
+# `9201`, which is the sort of cleverness that makes a checking tool worse than
+# nothing.
+# --------------------------------------------------------------------------
+
+def _clean(token: str) -> str:
+    """`981.` at the end of a sentence is the number 981 and a full stop."""
+    return token.rstrip(",._")
+
+
+def measure(actual: list[str]) -> str | None:
+    """The first number the command printed. That is the measurement.
+
+    First, not last, and not "the one that looks right": the rule has to be
+    stated in one sentence, or the author cannot predict what the tool will do,
+    and a tool whose verdict cannot be predicted is a tool that gets argued
+    with rather than believed. If a command prints a number you did not mean,
+    pipe it through something that prints the one you did.
+    """
+    for line in actual:
+        found = NUMBER.search(strip_ansi(line))
+        if found:
+            return _clean(found.group())
+    return None
+
+
+def check_claim(claimed: str, actual: list[str],
+                tolerance: float = DEFAULT_TOLERANCE) -> str | None:
+    """Does the number a sentence claims survive the command that measures it?
+
+    `claimed` is written as the author wrote it -- `920`, `~19 ms`, `1,089,128`
+    -- so a `~` means the same thing here as it does in a console block: this
+    number moves, and I am telling you so in public.
+    """
+    wanted = NUMBER.search(claimed)
+    if not wanted:
+        return "the claim names no number, so there is nothing to check"
+
+    want_text = _clean(wanted.group())
+    got_text = measure(actual)
+    if got_text is None:
+        return "the command printed no number at all"
+
+    want = _to_number(want_text)
+    got = _to_number(got_text)
+    if want is None or got is None:
+        # A version, an address, something with too many dots to be arithmetic.
+        # Fall back to the only honest comparison left: is it the same string?
+        if want_text == got_text:
+            return None
+        return f"the README claims {want_text}, measured {got_text}"
+
+    if APPROX.search(claimed):
+        if want == 0:
+            if got == 0:
+                return None
+        else:
+            ratio = got / want
+            if (1 / tolerance) <= ratio <= tolerance:
+                return None
+        return (f"the README claims ~{want_text} (anything within {tolerance:g}x), "
+                f"measured {got_text}")
+
+    if want == got:
+        return None
+    return f"the README claims {want_text}, measured {got_text}"
+
+
+def prose_disagrees(claimed: str, prose: str) -> str | None:
+    """Does the sentence still say what the hidden directive says it says?
+
+    The directive carries the claimed number, because a comment can be parsed
+    and a sentence cannot. But that opens a gap the whole tool exists to close:
+    the author edits the sentence, forgets the comment, and now the README says
+    920 while the machine dutifully verifies 981 against 981 and reports that
+    all is well. A checker that can be satisfied while the README lies is worse
+    than no checker, because it is also an alibi.
+
+    So the number in the directive must appear, visibly, in the sentence it is
+    attached to. `1,089,128` and `1089128` are the same number and either
+    spelling will do; the `~` is not required in prose, because "roughly 19 ms"
+    is English and `~19 ms` is not.
+    """
+    wanted = NUMBER.search(claimed)
+    if not wanted:
+        return None
+
+    token = _clean(wanted.group())
+    spellings = {token, token.replace(",", "").replace("_", "")}
+    value = _to_number(token)
+    if value is not None and value == int(value):
+        spellings.add(f"{int(value):,}")
+
+    for spelling in spellings:
+        if re.search(rf"(?<![\d,._]){re.escape(spelling)}(?![\d])", prose):
+            return None
+
+    return (f"the directive claims {token}, but the sentence it sits in "
+            f"does not say {token}")
+
+
+# --------------------------------------------------------------------------
+# Rewriting, for --update
+# --------------------------------------------------------------------------
+
+def _restyle(old: str, new: str) -> str:
+    """Write the new number the way the author wrote the old one.
+
+    If the README said `1,089,128` and `wc -l` says `1089128`, the README keeps
+    its commas. The tool is correcting a fact, not a style.
+    """
+    if "," not in old or "," in new:
+        return new
+    value = _to_number(new)
+    if value is None or value != int(value):
+        return new
+    return f"{int(value):,}"
+
+
+def rewrite_numbers(expected: str, actual: str) -> str | None:
+    """Refresh the numbers in a promised line from the line that came true.
+
+    This is the entire trick of `--update`, and it is deliberately narrow. It
+    does not paste the real line over the promised one; it keeps the promised
+    line -- its wording, its alignment, its `~`, its `...` -- and replaces only
+    the digits, with the digits that turned up in the same positions.
+
+    That narrowness is what makes the flag safe to hand to somebody. A snapshot
+    updater that overwrote the line would turn
+
+        39 passed                    into    39 passed in 4.51s
+
+    which is a duration, which is not a promise anybody can keep, and the next
+    run would fail on a README the tool itself wrote. And it would turn `~19 ms`
+    into `22 ms`, quietly deleting the author's public admission that the number
+    moves -- the one thing in this project that must never be automated away.
+
+    Returns None if the line no longer has the shape it had, in which case a
+    number is not what changed and a human should look at it.
+    """
+    spans: list[tuple[int, int, str]] = []
+
+    # `~19` is one span, tilde included. The tilde cannot go into the pattern
+    # as a literal -- the whole reason we are here is that the *output* says
+    # `300 ms` and no shell has ever printed a tilde -- so it is dropped from
+    # the match and put back, by hand, when the line is rebuilt.
+    for found in APPROX.finditer(expected):
+        spans.append((found.start(), found.end(), "approx"))
+    taken = list(spans)
+
+    for found in re.finditer(r"\.\.\.", expected):
+        spans.append((found.start(), found.end(), "any"))
+
+    for found in NUMBER.finditer(expected):
+        if any(start <= found.start() < end for start, end, _ in taken):
+            continue
+        spans.append((found.start(), found.end(), "number"))
+
+    spans.sort()
+    if not any(kind in ("number", "approx") for _, _, kind in spans):
+        return None                     # nothing to refresh
+
+    def literal(text: str) -> str:
+        out = []
+        for part in re.split(r"(\s+)", text):
+            if not part:
+                continue
+            out.append(r"\s+" if part.isspace() else re.escape(part))
+        return "".join(out)
+
+    pattern_parts: list[str] = []
+    position = 0
+    for start, end, kind in spans:
+        pattern_parts.append(literal(expected[position:start]))
+        # Non-greedy, unlike the matcher: here the groups have to line up with
+        # the spans they came from, and a greedy `.*` would eat the numbers.
+        pattern_parts.append(r"(?:.*?)" if kind == "any" else r"(\d[\d,._]*)")
+        position = end
+    pattern_parts.append(literal(expected[position:]))
+
+    found = re.search("".join(pattern_parts), strip_ansi(actual))
+    if not found:
+        return None
+
+    numbers = iter(found.groups())
+    out: list[str] = []
+    position = 0
+    for start, end, kind in spans:
+        out.append(expected[position:start])
+        position = end
+        if kind == "any":
+            out.append(expected[start:end])         # the `...` stays a `...`
+            continue
+        old = expected[start:end].lstrip("~")
+        new = _restyle(old, _clean(next(numbers)))
+        out.append(f"~{new}" if kind == "approx" else new)   # the `~` stays a `~`
+    out.append(expected[position:])
+    return "".join(out)
+
+
 def compare(expected: list[str], actual: list[str],
             tolerance: float = DEFAULT_TOLERANCE,
             exact: bool = False) -> str | None:

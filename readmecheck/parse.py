@@ -20,6 +20,18 @@ and a tool that forces you to litter it with markup is a tool nobody uses.
     <!-- readme-check: skip -->        this block is documentation, not a promise
     <!-- readme-check: timeout=120 -->
     <!-- readme-check: cwd=examples -->
+
+The second kind of claim is a number in a *sentence*. It looked unfalsifiable
+until cdcl-sat's README said "920 lines you can read" and there were 981 -- a
+number a reader could check in thirty seconds, in prose, where no console block
+would ever find it. So a sentence can name the command that measures it, in the
+same invisible comment:
+
+    It is <!-- readme-check: 981 = cat cdcl/*.py | wc -l --> 981 lines.
+
+The comment holds the claim and the command; the sentence holds the number the
+reader actually sees. Both are checked, and they are checked against each other
+as well -- see `prose_disagrees`.
 """
 
 from __future__ import annotations
@@ -30,6 +42,14 @@ from dataclasses import dataclass, field
 FENCE = re.compile(r"^```([\w-]*)\s*$")
 PROMPT = re.compile(r"^\$\s+(.*)$")
 DIRECTIVE = re.compile(r"<!--\s*readme-check:\s*(.*?)\s*-->")
+COMMENT = re.compile(r"<!--.*?-->")
+CODE_SPAN = re.compile(r"`[^`]*`")
+
+# `981 = cat cdcl/*.py | wc -l` -- a claim about a number, and the command that
+# settles it. The left-hand side must contain a digit, which is what tells a
+# claim apart from a directive: `skip`, `timeout=120` and `cwd=examples` are
+# words, and no keyword here will ever have a digit in it.
+CLAIM = re.compile(r"^(?P<claimed>[^=]*\d[^=]*?)\s*=\s*(?P<command>\S.*)$")
 
 # Blocks in these languages are transcripts of commands; anything else is code.
 SHELL_LANGUAGES = {"console", "shell", "sh", "bash", "shell-session"}
@@ -41,6 +61,16 @@ class Command:
     line: int                  # 1-based line of the `$ ` in the README
     command: str
     expected: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Claim:
+    """A number in a sentence, and the command that settles it."""
+    line: int                  # 1-based line of the sentence in the README
+    claimed: str               # as the author wrote it: "920", "~19 ms"
+    command: str
+    prose: str                 # the sentence, with the comments taken out
+    directive: str             # the raw `<!-- ... -->`, so --update can edit it
 
 
 @dataclass
@@ -84,6 +114,10 @@ def _trim_annotations(expected: list[str]) -> list[str]:
 
 def _parse_directives(text: str, block: Block) -> None:
     for raw in DIRECTIVE.findall(text):
+        if CLAIM.match(raw):
+            # A prose claim in the paragraph above a block is about the
+            # paragraph, not about the block. It is not this block's business.
+            continue
         for part in raw.split():
             if part == "skip":
                 block.skip = True
@@ -94,6 +128,50 @@ def _parse_directives(text: str, block: Block) -> None:
                 block.timeout = float(part[8:])
             elif part.startswith("cwd="):
                 block.cwd = part[4:]
+
+
+def parse_claims(markdown: str) -> list[Claim]:
+    """Extract every number in the prose that named the command proving it.
+
+    Fenced blocks and inline code spans are stepped over. A README that
+    documents this syntax has to show the syntax, and a parser that could not
+    tell an example from a claim would spend its life running the manual. This
+    one does document itself, two sections down, and the first draft of this
+    function duly tried to execute the illustration -- which is at least the
+    tool failing in the direction it was built to fail in.
+    """
+    claims: list[Claim] = []
+    inside_fence = False
+
+    for number, line in enumerate(markdown.splitlines(), start=1):
+        if line.startswith("```"):
+            inside_fence = not inside_fence
+            continue
+        if inside_fence:
+            continue
+
+        quoted = [(found.start(), found.end())
+                  for found in CODE_SPAN.finditer(line)]
+
+        for found in DIRECTIVE.finditer(line):
+            if any(start <= found.start() < end for start, end in quoted):
+                continue                 # `<!-- readme-check: ... -->` in backticks
+            claim = CLAIM.match(found.group(1))
+            if not claim:
+                continue                 # skip / timeout= / cwd=: a block directive
+
+            # What the reader sees is the line with every comment removed. That
+            # is what the claim has to agree with, because that is the README.
+            prose = COMMENT.sub("", line)
+            claims.append(Claim(
+                line=number,
+                claimed=claim.group("claimed").strip(),
+                command=claim.group("command").strip(),
+                prose=prose,
+                directive=found.group(0),
+            ))
+
+    return claims
 
 
 def parse(markdown: str) -> list[Block]:

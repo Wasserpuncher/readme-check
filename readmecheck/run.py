@@ -16,8 +16,8 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-from .match import Mismatch, compare
-from .parse import Block
+from .match import Mismatch, check_claim, compare, prose_disagrees
+from .parse import Block, Claim
 
 DEFAULT_TIMEOUT = 300.0
 
@@ -35,6 +35,24 @@ class Result:
     @property
     def ok(self) -> bool:
         return not self.mismatches
+
+
+def execute(command: str, cwd: str, timeout: float) -> tuple[list[str], str | None]:
+    """Run one command and hand back what it said, or why it could not.
+
+    stdout and stderr are merged, in the order the shell would have shown them,
+    because that is what the author saw when they pasted the block.
+    """
+    try:
+        completed = subprocess.run(
+            command, shell=True, cwd=cwd,
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return [], f"timed out after {timeout:.0f}s"
+    except OSError as exc:
+        return [], f"could not run: {exc}"
+    return (completed.stdout + completed.stderr).splitlines(), None
 
 
 def run_block(block: Block, root: str, tolerance: float,
@@ -60,27 +78,14 @@ def run_block(block: Block, root: str, tolerance: float,
         # me on the first run, which is the most useful thing it has done so far.
         verify = bool(command.expected)
 
-        try:
-            completed = subprocess.run(
-                command.command, shell=True, cwd=cwd,
-                capture_output=True, text=True, timeout=limit,
-            )
-            actual = (completed.stdout + completed.stderr).splitlines()
-        except subprocess.TimeoutExpired:
+        actual, error = execute(command.command, cwd, limit)
+        if error:
             if verify:
                 result.checked += 1
                 result.mismatches.append(Mismatch(
                     line=command.line, command=command.command,
                     expected="\n".join(command.expected), actual="",
-                    reason=f"timed out after {limit:.0f}s"))
-            continue
-        except OSError as exc:
-            if verify:
-                result.checked += 1
-                result.mismatches.append(Mismatch(
-                    line=command.line, command=command.command,
-                    expected="\n".join(command.expected), actual="",
-                    reason=f"could not run: {exc}"))
+                    reason=error))
             continue
 
         if not verify:
@@ -97,9 +102,32 @@ def run_block(block: Block, root: str, tolerance: float,
                 reason=reason))
 
 
+def run_claim(claim: Claim, root: str, tolerance: float,
+              timeout: float, result: Result) -> None:
+    """Settle one number in one sentence."""
+    result.checked += 1
+    actual, error = execute(claim.command, root, timeout)
+
+    reason = error or check_claim(claim.claimed, actual, tolerance)
+    if reason is None:
+        # The number is true. The remaining question is whether the sentence
+        # still says it -- an author who edits the prose and forgets the
+        # comment has a README that lies and a build that passes.
+        reason = prose_disagrees(claim.claimed, claim.prose)
+
+    if reason:
+        result.mismatches.append(Mismatch(
+            line=claim.line, command=claim.command,
+            expected=claim.claimed, actual="\n".join(actual),
+            reason=reason))
+
+
 def check(blocks: list[Block], root: str, tolerance: float,
-          timeout: float = DEFAULT_TIMEOUT) -> Result:
+          timeout: float = DEFAULT_TIMEOUT,
+          claims: list[Claim] | None = None) -> Result:
     result = Result()
     for block in blocks:
         run_block(block, root, tolerance, timeout, result)
+    for claim in claims or []:
+        run_claim(claim, root, tolerance, timeout, result)
     return result

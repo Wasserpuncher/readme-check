@@ -9,9 +9,13 @@ of documentation a machine can falsify -- so this falsifies it.
     True
 """
 
-from .match import Mismatch, compare
-from .parse import Block, Command, parse
+from .match import (Mismatch, check_claim, compare, measure, prose_disagrees,
+                    rewrite_numbers)
+from .parse import Block, Claim, Command, parse, parse_claims
 from .run import Result, check
+from .update import Update, diff, update
 
-__all__ = ["parse", "check", "compare", "Block", "Command", "Result", "Mismatch"]
+__all__ = ["parse", "parse_claims", "check", "compare", "check_claim",
+           "prose_disagrees", "measure", "rewrite_numbers", "update", "diff",
+           "Block", "Claim", "Command", "Result", "Update", "Mismatch"]
 __version__ = "1.0.0"
