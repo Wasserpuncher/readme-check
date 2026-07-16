@@ -1,0 +1,23 @@
+name: 'readme-check'
+description: 'Run the console blocks in your README and check they still tell the truth'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+inputs:
+  path:
+    description: 'Path to the README to check'
+    required: false
+    default: 'README.md'
+  args:
+    description: 'Extra arguments passed to readme-check (e.g. --tolerance 2)'
+    required: false
+    default: ''
+runs:
+  using: 'composite'
+  steps:
+    - name: Install readme-check
+      shell: bash
+      run: pip install "git+https://github.com/Wasserpuncher/readme-check@v1"
+    - name: Run readme-check
+      shell: bash
+      run: readme-check "${{ inputs.path }}" ${{ inputs.args }}

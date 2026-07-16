@@ -266,6 +266,21 @@ including anything destructive you have documented. It is not a sandbox. If you
 would not want a stranger to paste your README into a shell, this tool is the
 least of your problems.
 
+## Use it in CI
+
+There is a GitHub Action, so a build can run this check in one step. It pins the
+tool at the moving `@v1` tag and defaults `path` to `README.md`.
+
+```yaml
+- uses: actions/setup-python@v5
+  with:
+    python-version: '3.x'
+- uses: Wasserpuncher/readme-check@v1
+  # with:
+  #   path: README.md
+  #   args: '--tolerance 2'
+```
+
 ## License
 
 MIT
